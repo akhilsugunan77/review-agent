@@ -1,0 +1,17 @@
+{
+  "$schema": "./node_modules/@effect/tsgo/oxlint-schema.json",
+  "extends": ["./node_modules/@effect/tsgo/oxlint-presets/recommended.json"],
+  "plugins": ["typescript", "unicorn", "oxc", "import"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn"
+  },
+  "options": {
+    "typeAware": true
+  },
+  "ignorePatterns": ["node_modules", "dist", ".alchemy"],
+  "rules": {
+    "require-yield": "off",
+    "effecttsgo/unstable-api-usage": "off"
+  }
+}

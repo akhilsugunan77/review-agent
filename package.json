@@ -11,6 +11,7 @@
     "dev": "alchemy dev",
     "destroy": "alchemy destroy",
     "typecheck": "tsc --noEmit",
+    "test": "vitest",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
     "format": "oxfmt",
@@ -25,11 +26,13 @@
   "devDependencies": {
     "@effect/language-service": "0.87.4",
     "@effect/tsgo": "0.51.1",
+    "@effect/vitest": "4.0.2",
     "@types/node": "^26.6.4",
     "oxfmt": "0.72.0",
     "oxlint": "1.87.0",
     "oxlint-tsgolint": "7.0.2003",
-    "typescript": "7.0.2"
+    "typescript": "7.0.2",
+    "vitest": "5.0.3"
   },
   "devEngines": {
     "packageManager": {

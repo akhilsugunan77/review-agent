@@ -1,6 +1,6 @@
 import * as Alchemy from "alchemy"
 import * as Cloudflare from "alchemy/Cloudflare"
-import * as Effect from "effect/Effect"
+import { Effect } from "effect"
 import Worker from "./src/worker.ts"
 
 export default Alchemy.Stack(
@@ -11,9 +11,6 @@ export default Alchemy.Stack(
   },
   Effect.gen(function* () {
     const worker = yield* Worker
-
-    return {
-      url: worker.url,
-    }
+    return { url: worker.url }
   }),
 )

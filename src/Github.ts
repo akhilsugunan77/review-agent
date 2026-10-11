@@ -35,4 +35,18 @@ export class Github extends Context.Service<
       return Github.of({ getPullRequestDiff })
     }),
   ).pipe(Layer.provide(FetchHttpClient.layer))
+
+  static readonly mock = Layer.succeed(
+    Github,
+    Github.of({
+      getPullRequestDiff: () => Effect.succeed("line1\nline2"),
+    }),
+  )
+
+  static readonly fail = Layer.succeed(
+    Github,
+    Github.of({
+      getPullRequestDiff: () => new GithubError({ cause: "failed test" }),
+    }),
+  )
 }

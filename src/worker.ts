@@ -1,18 +1,20 @@
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Config, Effect, Redacted, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
+import { verifySignature } from "./verifySignature.ts"
+import { Github } from "./Github.ts"
 
 export default Cloudflare.Worker(
   "Worker",
   { main: import.meta.url },
   Effect.gen(function* () {
-    console.log("setup ran")
     const webhookSecret = yield* Config.Redacted("GITHUB_WEBHOOK_SECRET")
-    console.log(webhookSecret)
+    const github = yield* Github
     return {
-      fetch: makeHandler(webhookSecret),
+      fetch: makeHandler(webhookSecret).pipe(Effect.provideService(Github, github)),
     }
-  }),
+    // oxlint-disable-next-line effecttsgo/strict-effect-provide This is the entrypoint for worker
+  }).pipe(Effect.provide(Github.layer)),
 )
 
 const PullRequestEventSchema = Schema.Struct({
@@ -22,15 +24,18 @@ const PullRequestEventSchema = Schema.Struct({
   repository: Schema.Struct({ full_name: Schema.String }),
 })
 
-const makeHandler = (_webhookSecret: Redacted.Redacted) =>
+const makeHandler = (webhookSecret: Redacted.Redacted) =>
   Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest
     const { url, method } = request
     if (url === "/webhook" && method === "POST") {
-      const event = yield* HttpServerRequest.schemaBodyJson(PullRequestEventSchema)
-      return HttpServerResponse.text(
-        `Reviewing PR #${event.number} "${event.pull_request.title} in ${event.repository.full_name}"`,
-      )
+      const body = yield* request.text
+      const signature = request.headers["x-hub-signature-256"]
+      yield* verifySignature(webhookSecret, body, signature)
+      const event = yield* Schema.decodeEffect(Schema.fromJsonString(PullRequestEventSchema))(body)
+      const github = yield* Github
+      const diff = yield* github.getPullRequestDiff(event.repository.full_name, event.number)
+      return HttpServerResponse.text(diff.slice(0, 500))
     }
     return HttpServerResponse.text("Not found", { status: 404 })
   }).pipe(
@@ -39,5 +44,9 @@ const makeHandler = (_webhookSecret: Redacted.Redacted) =>
         Effect.succeed(HttpServerResponse.text("Invalid JSON", { status: 400 })),
       SchemaError: (error) =>
         Effect.succeed(HttpServerResponse.text(error.message, { status: 400 })),
+      InvalidSignature: (error) =>
+        Effect.succeed(HttpServerResponse.text(error.reason, { status: 401 })),
+      GithubError: (_error) =>
+        Effect.succeed(HttpServerResponse.text("Github error", { status: 502 })),
     }),
   )

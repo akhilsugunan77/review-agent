@@ -45,9 +45,13 @@ export const makeHandler = (webhookSecret: Redacted.Redacted) =>
         Effect.succeed(HttpServerResponse.text(error.message, { status: 400 })),
       InvalidSignature: (error) =>
         Effect.succeed(HttpServerResponse.text(error.reason, { status: 401 })),
-      GithubError: (_error) =>
-        Effect.succeed(HttpServerResponse.text("Github error", { status: 502 })),
-      ReviewerError: (_error) =>
-        Effect.succeed(HttpServerResponse.text("Reviewer error", { status: 502 })),
+      GithubError: (error) =>
+        Effect.logError("Github request failed", error.cause).pipe(
+          Effect.as(HttpServerResponse.text("Github error", { status: 502 })),
+        ),
+      ReviewerError: (error) =>
+        Effect.logError("Reviewer request failed", error.cause).pipe(
+          Effect.as(HttpServerResponse.text("Reviewer error", { status: 502 })),
+        ),
     }),
   )

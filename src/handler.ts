@@ -18,6 +18,7 @@ export const makeHandler = (webhookSecret: Redacted.Redacted) =>
     if (url === "/webhook" && method === "POST") {
       const body = yield* request.text
       const signature = request.headers["x-hub-signature-256"]
+      yield* verifySignature(webhookSecret, body, signature)
       const githubEvent = request.headers["x-github-event"]
       if (githubEvent === "ping") {
         return HttpServerResponse.text("PONG", { status: 200 })
@@ -25,9 +26,8 @@ export const makeHandler = (webhookSecret: Redacted.Redacted) =>
       if (githubEvent !== "pull_request") {
         return HttpServerResponse.text(`ignored event: ${githubEvent}`, { status: 200 })
       }
-      yield* verifySignature(webhookSecret, body, signature)
       const event = yield* Schema.decodeEffect(Schema.fromJsonString(PullRequestEventSchema))(body)
-      if (!["synchronize", "open"].includes(event.action)) {
+      if (!["synchronize", "opened"].includes(event.action)) {
         return HttpServerResponse.text(`ignored action: ${event.action}`, { status: 200 })
       }
       const github = yield* Github

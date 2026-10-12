@@ -5,16 +5,35 @@ import { createHmac } from "node:crypto"
 import { makeHandler, PullRequestEventSchema } from "../src/handler.ts"
 import { Reviewer } from "../src/Reviewer.ts"
 import { Github } from "../src/Github.ts"
+import pullRequestOpenedJson from "./fixtures/pull_request.opened.json" with { type: "json" }
 
 const secret = "test-secret"
 
 const sign = (payload: string) =>
-  `sha256=${createHmac("sha256", "test-secret").update(payload).digest("hex")}`
+  `sha256=${createHmac("sha256", secret).update(payload).digest("hex")}`
+
+const runPullRequestEvent = (payload: Record<string, any>) => {
+  const body = JSON.stringify(payload)
+  const req = HttpServerRequest.fromWeb(
+    new Request("http://localhost:3000/webhook", {
+      method: "POST",
+      body,
+      headers: {
+        "x-hub-signature-256": sign(body),
+        "x-github-event": "pull_request",
+      },
+    }),
+  )
+
+  return makeHandler(Redacted.make(secret)).pipe(
+    Effect.provideService(HttpServerRequest.HttpServerRequest, req),
+  )
+}
 
 const run = (secretToken: string, githubEvent?: string, action?: string) => {
   const body = JSON.stringify(
     PullRequestEventSchema.make({
-      action: action ?? "open",
+      action: action ?? "opened",
       number: 1,
       pull_request: { title: "Example" },
       repository: {
@@ -51,6 +70,7 @@ describe("Handler", () => {
   )
   it.effect("Pull request with action closed", () =>
     Effect.gen(function* () {
+      // UPDATE WITH ACTUAL PAYLOAD
       const response = yield* run(secret, "pull_request", "closed")
       expect(response.status).toBe(200)
       const webResponse = HttpServerResponse.toWeb(response)
@@ -60,7 +80,7 @@ describe("Handler", () => {
   )
   it.effect("Valid webhook", () =>
     Effect.gen(function* () {
-      const response = yield* run(secret)
+      const response = yield* runPullRequestEvent(pullRequestOpenedJson)
       expect(response.status).toBe(200)
       const webResponse = HttpServerResponse.toWeb(response)
       const text = yield* Effect.promise(() => webResponse.text())

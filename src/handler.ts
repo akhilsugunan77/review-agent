@@ -19,7 +19,17 @@ export const makeHandler = (webhookSecret: Redacted.Redacted) =>
       const body = yield* request.text
       const signature = request.headers["x-hub-signature-256"]
       yield* verifySignature(webhookSecret, body, signature)
+      const githubEvent = request.headers["x-github-event"]
+      if (githubEvent === "ping") {
+        return HttpServerResponse.text("PONG", { status: 200 })
+      }
+      if (githubEvent !== "pull_request") {
+        return HttpServerResponse.text(`ignored event: ${githubEvent}`, { status: 200 })
+      }
       const event = yield* Schema.decodeEffect(Schema.fromJsonString(PullRequestEventSchema))(body)
+      if (!["synchronize", "opened"].includes(event.action)) {
+        return HttpServerResponse.text(`ignored action: ${event.action}`, { status: 200 })
+      }
       const github = yield* Github
       const diff = yield* github.getPullRequestDiff(event.repository.full_name, event.number)
       const reviewer = yield* Reviewer
@@ -35,9 +45,13 @@ export const makeHandler = (webhookSecret: Redacted.Redacted) =>
         Effect.succeed(HttpServerResponse.text(error.message, { status: 400 })),
       InvalidSignature: (error) =>
         Effect.succeed(HttpServerResponse.text(error.reason, { status: 401 })),
-      GithubError: (_error) =>
-        Effect.succeed(HttpServerResponse.text("Github error", { status: 502 })),
-      ReviewerError: (_error) =>
-        Effect.succeed(HttpServerResponse.text("Reviewer error", { status: 502 })),
+      GithubError: (error) =>
+        Effect.logError("Github request failed", error.cause).pipe(
+          Effect.as(HttpServerResponse.text("Github error", { status: 502 })),
+        ),
+      ReviewerError: (error) =>
+        Effect.logError("Reviewer request failed", error.cause).pipe(
+          Effect.as(HttpServerResponse.text("Reviewer error", { status: 502 })),
+        ),
     }),
   )

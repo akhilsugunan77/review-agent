@@ -20,5 +20,5 @@ export default Cloudflare.Worker(
       ),
     }
     // oxlint-disable-next-line effecttsgo/strict-effect-provide This is the entrypoint for worker
-  }).pipe(Effect.provide(Services)),
+  }).pipe(Effect.provide([Services])),
 )

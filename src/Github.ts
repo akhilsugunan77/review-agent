@@ -37,7 +37,7 @@ export class Github extends Context.Service<
 
       const postComment = Effect.fn("postComment")(
         function* (repo: string, prNo: number, body: string) {
-          yield* client.post(`/repos/${repo}/pulls/${prNo}/comments`, {
+          yield* client.post(`/repos/${repo}/issues/${prNo}/comments`, {
             body: HttpBody.jsonUnsafe({ body }),
           })
         },

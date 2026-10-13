@@ -4,7 +4,7 @@ import { Github } from "./Github.ts"
 import { Reviewer } from "./Reviewer.ts"
 import { makeHandler } from "./handler.ts"
 
-const Services = Layer.mergeAll(Github.layer, Reviewer.mock)
+const Services = Layer.mergeAll(Github.layer, Reviewer.layer)
 
 export default Cloudflare.Worker(
   "Worker",

@@ -9,6 +9,14 @@ const WorkersAiResponse = Schema.Struct({
   result: Schema.Struct({ response: Schema.String }),
 })
 
+const systemPrompts = `
+You're a code reviewer.
+Make every issue prove itself. Require, for each issue: the file, the line, and a concrete failure scenario ('when X happens, Y goes wrong'). 'Add logging' can't name a failure scenario, so it gets filtered out. Explicitly allow 'no issues', e.g. 'If you find no real bugs, say so. An empty list is a good result. Never invent issues to fill the list.
+Template:
+  **Merge confidence:** <1-10> — <one sentence why> 
+  **Issues** (max 5, most severe first; omit this section if none) 
+  1. \`<file>:<line>\` — <the bug> — **Fails when:** <concrete scenario>`
+
 export class Reviewer extends Context.Service<
   Reviewer,
   {
@@ -37,8 +45,7 @@ export class Reviewer extends Context.Service<
               messages: [
                 {
                   role: "system",
-                  content:
-                    "You're a code reviewer, find critical bugs and issues, avoid nitpicks. I want this to properly formatted, First you tell the author how confident you are with the PR to be safely merged to root branch without causing any issues. Then you list you reviews based on criticality. And only list maximum 5 issues at a time. If you didn't find any issues you can add a approval comment",
+                  content: systemPrompts,
                 },
                 { role: "user", content: diff },
               ],

@@ -34,7 +34,8 @@ export const makeHandler = (webhookSecret: Redacted.Redacted) =>
       const diff = yield* github.getPullRequestDiff(event.repository.full_name, event.number)
       const reviewer = yield* Reviewer
       const review = yield* reviewer.review(diff)
-      return HttpServerResponse.text(review)
+      yield* github.postComment(event.repository.full_name, event.number, review)
+      return HttpServerResponse.text(review, { status: 200 })
     }
     return HttpServerResponse.text("Not found", { status: 404 })
   }).pipe(

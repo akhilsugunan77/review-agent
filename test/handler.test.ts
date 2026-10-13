@@ -1,5 +1,5 @@
 import { describe, it, expect } from "@effect/vitest"
-import { Effect, Redacted } from "effect"
+import { Effect, Layer, Redacted } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { createHmac } from "node:crypto"
 import { makeHandler, PullRequestEventSchema } from "../src/handler.ts"
@@ -12,6 +12,15 @@ import { readFileSync } from "node:fs"
 const secret = "test-secret"
 
 const exampleDiff = readFileSync(new URL("./fixtures/example.diff", import.meta.url), "utf-8")
+
+const githubSpy = (diff: string, posted: Array<string>) =>
+  Layer.succeed(
+    Github,
+    Github.of({
+      getPullRequestDiff: () => Effect.succeed(diff),
+      postComment: (_repo, _prNo, body) => Effect.sync(() => posted.push(body)),
+    }),
+  )
 
 const sign = (payload: string) =>
   `sha256=${createHmac("sha256", secret).update(payload).digest("hex")}`
@@ -83,14 +92,13 @@ describe("Handler", () => {
     }).pipe(Effect.provide([Github.mockWithDiff(exampleDiff), Reviewer.mock])),
   )
 
+  const posted: Array<string> = []
   it.effect("Pull request with synchronize", () =>
     Effect.gen(function* () {
       const response = yield* runPullRequestEvent(pullRequestSynchronizeJson)
       expect(response.status).toBe(200)
-      const webResponse = HttpServerResponse.toWeb(response)
-      const text = yield* Effect.promise(() => webResponse.text())
-      expect(text).toBe("Fake review: this diff has 648 lines look good")
-    }).pipe(Effect.provide([Github.mockWithDiff(exampleDiff), Reviewer.mock])),
+      expect(posted).toEqual(["Fake review: this diff has 648 lines look good"])
+    }).pipe(Effect.provide([githubSpy(exampleDiff, posted), Reviewer.mock])),
   )
   it.effect("Valid webhook", () =>
     Effect.gen(function* () {

@@ -1,5 +1,5 @@
-import { Context, Effect, Layer, Schema } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import { Config, Context, Effect, Layer, Schema } from "effect"
+import { FetchHttpClient, HttpBody, HttpClient, HttpClientRequest } from "effect/http"
 
 export class GithubError extends Schema.TaggedError<GithubError>()("GithubError", {
   cause: Schema.Defect(),
@@ -9,13 +9,17 @@ export class Github extends Context.Service<
   Github,
   {
     getPullRequestDiff(repo: string, prNo: number): Effect.Effect<string, GithubError>
+    postComment(repo: string, prNo: number, body: string): Effect.Effect<void, GithubError>
   }
 >()("review-agent/Github") {
   static readonly layer = Layer.effect(
     Github,
     Effect.gen(function* () {
+      const token = yield* Config.Redacted("GITHUB_TOKEN")
       const client = (yield* HttpClient.HttpClient).pipe(
         HttpClient.mapRequest(HttpClientRequest.prependUrl("https://api.github.com")),
+        HttpClient.mapRequest(HttpClientRequest.bearerToken(token)),
+        HttpClient.mapRequest(HttpClientRequest.setHeader("user-agent", "review-agent")),
         HttpClient.filterStatusOk,
       )
 
@@ -23,7 +27,6 @@ export class Github extends Context.Service<
         function* (repo: string, prNo: number) {
           const response = yield* client.get(`/repos/${repo}/pulls/${prNo}`, {
             headers: {
-              "user-agent": "review-agent",
               accept: "application/vnd.github.diff",
             },
           })
@@ -32,7 +35,16 @@ export class Github extends Context.Service<
         Effect.mapError((cause) => new GithubError({ cause })),
       )
 
-      return Github.of({ getPullRequestDiff })
+      const postComment = Effect.fn("postComment")(
+        function* (repo: string, prNo: number, body: string) {
+          yield* client.post(`/repos/${repo}/pulls/${prNo}/comments`, {
+            body: HttpBody.jsonUnsafe({ body }),
+          })
+        },
+        Effect.mapError((cause) => new GithubError({ cause })),
+      )
+
+      return Github.of({ getPullRequestDiff, postComment })
     }),
   ).pipe(Layer.provide(FetchHttpClient.layer))
 
@@ -41,6 +53,7 @@ export class Github extends Context.Service<
       Github,
       Github.of({
         getPullRequestDiff: () => Effect.succeed(diff),
+        postComment: () => Effect.void,
       }),
     )
 
@@ -48,6 +61,7 @@ export class Github extends Context.Service<
     Github,
     Github.of({
       getPullRequestDiff: () => new GithubError({ cause: "failed test" }),
+      postComment: () => new GithubError({ cause: "Post comment failed" }),
     }),
   )
 }

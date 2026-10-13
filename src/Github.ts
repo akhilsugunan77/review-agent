@@ -36,12 +36,13 @@ export class Github extends Context.Service<
     }),
   ).pipe(Layer.provide(FetchHttpClient.layer))
 
-  static readonly mock = Layer.succeed(
-    Github,
-    Github.of({
-      getPullRequestDiff: () => Effect.succeed("line1\nline2"),
-    }),
-  )
+  static readonly mockWithDiff = (diff: string) =>
+    Layer.succeed(
+      Github,
+      Github.of({
+        getPullRequestDiff: () => Effect.succeed(diff),
+      }),
+    )
 
   static readonly fail = Layer.succeed(
     Github,

@@ -6,8 +6,12 @@ import { makeHandler, PullRequestEventSchema } from "../src/handler.ts"
 import { Reviewer } from "../src/Reviewer.ts"
 import { Github } from "../src/Github.ts"
 import pullRequestOpenedJson from "./fixtures/pull_request.opened.json" with { type: "json" }
+import pullRequestSynchronizeJson from "./fixtures/pull_request.synchronize.json" with { type: "json" }
+import { readFileSync } from "node:fs"
 
 const secret = "test-secret"
+
+const exampleDiff = readFileSync(new URL("./fixtures/example.diff", import.meta.url), "utf-8")
 
 const sign = (payload: string) =>
   `sha256=${createHmac("sha256", secret).update(payload).digest("hex")}`
@@ -66,7 +70,7 @@ describe("Handler", () => {
       const webResponse = HttpServerResponse.toWeb(response)
       const text = yield* Effect.promise(() => webResponse.text())
       expect(text).toBe("PONG")
-    }).pipe(Effect.provide([Github.mock, Reviewer.mock])),
+    }).pipe(Effect.provide([Github.mockWithDiff(exampleDiff), Reviewer.mock])),
   )
   it.effect("Pull request with action closed", () =>
     Effect.gen(function* () {
@@ -76,7 +80,17 @@ describe("Handler", () => {
       const webResponse = HttpServerResponse.toWeb(response)
       const text = yield* Effect.promise(() => webResponse.text())
       expect(text).toBe("ignored action: closed")
-    }).pipe(Effect.provide([Github.mock, Reviewer.mock])),
+    }).pipe(Effect.provide([Github.mockWithDiff(exampleDiff), Reviewer.mock])),
+  )
+
+  it.effect("Pull request with synchronize", () =>
+    Effect.gen(function* () {
+      const response = yield* runPullRequestEvent(pullRequestSynchronizeJson)
+      expect(response.status).toBe(200)
+      const webResponse = HttpServerResponse.toWeb(response)
+      const text = yield* Effect.promise(() => webResponse.text())
+      expect(text).toBe("Fake review: this diff has 648 lines look good")
+    }).pipe(Effect.provide([Github.mockWithDiff(exampleDiff), Reviewer.mock])),
   )
   it.effect("Valid webhook", () =>
     Effect.gen(function* () {
@@ -84,14 +98,14 @@ describe("Handler", () => {
       expect(response.status).toBe(200)
       const webResponse = HttpServerResponse.toWeb(response)
       const text = yield* Effect.promise(() => webResponse.text())
-      expect(text).toBe("Fake review: this diff has 2 lines look good")
-    }).pipe(Effect.provide([Github.mock, Reviewer.mock])),
+      expect(text).toBe("Fake review: this diff has 648 lines look good")
+    }).pipe(Effect.provide([Github.mockWithDiff(exampleDiff), Reviewer.mock])),
   )
   it.effect("Bad signature", () =>
     Effect.gen(function* () {
       const response = yield* run("wrong-secret")
       expect(response.status).toBe(401)
-    }).pipe(Effect.provide([Github.mock, Reviewer.mock])),
+    }).pipe(Effect.provide([Github.mockWithDiff(exampleDiff), Reviewer.mock])),
   )
 
   it.effect("Github down", () =>

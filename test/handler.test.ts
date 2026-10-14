@@ -17,7 +17,8 @@ const githubSpy = (diff: string, posted: Array<string>) =>
   Layer.succeed(
     Github,
     Github.of({
-      getPullRequestDiff: () => Effect.succeed(diff),
+      getPullRequestDiff: () =>
+        Effect.succeed([{ filename: "hello.txt", patch: diff, status: "updated" }]),
       postComment: (_repo, _prNo, body) => Effect.sync(() => posted.push(body)),
     }),
   )

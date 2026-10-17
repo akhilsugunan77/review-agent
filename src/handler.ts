@@ -1,10 +1,7 @@
 import { Effect, Redacted, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
-import { Github } from "./Github.ts"
-import { Reviewer } from "./Reviewer.ts"
+import { ReviewQueue } from "./ReviewQueue.ts"
 import { verifySignature } from "./verifySignature.ts"
-import { makeReviewContext } from "./projectContext.ts"
-import { formatReviewBody, placeComments, reviewableFiles, toDiff } from "./reviewableFiles.ts"
 
 export const PullRequestEventSchema = Schema.Struct({
   action: Schema.String,
@@ -18,6 +15,7 @@ export const PullRequestEventSchema = Schema.Struct({
   repository: Schema.Struct({ full_name: Schema.String }),
 })
 
+// GitHub gives up on a webhook after 10s, so the review itself runs from the queue
 export const makeHandler = (webhookSecret: Redacted.Redacted) =>
   Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest
@@ -37,30 +35,16 @@ export const makeHandler = (webhookSecret: Redacted.Redacted) =>
       if (!["synchronize", "opened"].includes(event.action)) {
         return HttpServerResponse.text(`ignored action: ${event.action}`, { status: 200 })
       }
-      const github = yield* Github
-      const files = reviewableFiles(
-        yield* github.getPullRequestDiff(event.repository.full_name, event.number),
-      )
-      // Read from the base commit so a PR can't rewrite the context it's reviewed with
-      const readme = yield* github.getReadme(
-        event.repository.full_name,
-        event.pull_request.base.sha,
-      )
-      const context = makeReviewContext({
+      const reviewQueue = yield* ReviewQueue
+      yield* reviewQueue.enqueue({
+        repo: event.repository.full_name,
+        number: event.number,
+        headSha: event.pull_request.head.sha,
+        baseSha: event.pull_request.base.sha,
         title: event.pull_request.title,
-        description: event.pull_request.body,
-        readme,
+        body: event.pull_request.body,
       })
-      const reviewer = yield* Reviewer
-      const review = yield* reviewer.review(toDiff(files), context)
-      const { inline, unplaced } = placeComments(files, review.comments)
-      const reviewBody = formatReviewBody(review, unplaced)
-      yield* github.createReview(event.repository.full_name, event.number, {
-        commitId: event.pull_request.head.sha,
-        body: reviewBody,
-        comments: inline,
-      })
-      return HttpServerResponse.text(reviewBody, { status: 200 })
+      return HttpServerResponse.text("Review queued", { status: 202 })
     }
     return HttpServerResponse.text("Not found", { status: 404 })
   }).pipe(
@@ -71,13 +55,10 @@ export const makeHandler = (webhookSecret: Redacted.Redacted) =>
         Effect.succeed(HttpServerResponse.text(error.message, { status: 400 })),
       InvalidSignature: (error) =>
         Effect.succeed(HttpServerResponse.text(error.reason, { status: 401 })),
-      GithubError: (error) =>
-        Effect.logError("Github request failed", error.cause).pipe(
-          Effect.as(HttpServerResponse.text("Github error", { status: 502 })),
-        ),
-      ReviewerError: (error) =>
-        Effect.logError("Reviewer request failed", error.cause).pipe(
-          Effect.as(HttpServerResponse.text("Reviewer error", { status: 502 })),
+      // A failed delivery shows in GitHub's webhook settings, where it can be redelivered
+      ReviewQueueError: (error) =>
+        Effect.logError("Enqueue failed", error.cause).pipe(
+          Effect.as(HttpServerResponse.text("Queue error", { status: 503 })),
         ),
     }),
   )

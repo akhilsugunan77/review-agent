@@ -25,12 +25,31 @@ export const Review = Schema.Struct({
 export type Review = typeof Review.Type
 
 // JSON mode may hand back the object itself or a JSON string, so accept both
+const ReviewJson = Schema.Union([Review, Schema.fromJsonString(Review)])
+
+// Most Workers AI models answer in result.response; OpenAI models (gpt-oss) use the chat completions shape
 const WorkersAiResponse = Schema.Struct({
-  result: Schema.Struct({ response: Schema.Union([Review, Schema.fromJsonString(Review)]) }),
+  result: Schema.Union([
+    Schema.Struct({ response: ReviewJson }),
+    Schema.Struct({
+      choices: Schema.NonEmptyArray(
+        Schema.Struct({ message: Schema.Struct({ content: ReviewJson }) }),
+      ),
+    }),
+  ]),
 })
 
-// Must be a Workers AI model that supports JSON mode (response_format)
-const MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+/** Pulls the Review out of either Workers AI response shape */
+export const decodeWorkersAiResponse = (json: unknown) =>
+  Schema.decodeUnknownEffect(WorkersAiResponse)(json).pipe(
+    Effect.map(({ result }) =>
+      "response" in result ? result.response : result.choices[0].message.content,
+    ),
+  )
+
+// Must be a Workers AI model that supports JSON mode (response_format).
+// gpt-oss-120b reasons before answering; llama-3.3-70b skimmed big diffs and returned no comments
+const MODEL = "@cf/openai/gpt-oss-120b"
 
 const systemPrompts = `
 You're a code reviewer. You get the pull request's title and description, the project's README (when it has one), and a diff where each file starts with "--- <path>" and every line that exists in the new file is prefixed with its line number.
@@ -98,14 +117,14 @@ export class Reviewer extends Context.Service<
                 { role: "user", content },
               ],
               response_format: { type: "json_schema", json_schema: jsonSchema },
-              // Room for the analysis plus the review, so the JSON isn't cut off
-              max_tokens: 2048,
+              // Reasoning tokens count against this too (about 2.7k on a 12k-token prompt),
+              // so leave room for them plus the JSON
+              max_tokens: 8192,
             }),
           })
           const json = yield* response.json
           yield* Effect.logInfo("Reviewer response", json)
-          const decoded = yield* Schema.decodeUnknownEffect(WorkersAiResponse)(json)
-          return decoded.result.response
+          return yield* decodeWorkersAiResponse(json)
         },
         Effect.mapError((cause) => new ReviewerError({ cause })),
       )

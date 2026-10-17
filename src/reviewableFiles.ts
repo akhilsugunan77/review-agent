@@ -32,7 +32,9 @@ export const placeComments = (
   const lines = new Map(files.map((file) => [file.filename, commentableLines(file.patch ?? "")]))
   const inline: Array<ReviewComment> = []
   const unplaced: Array<ReviewComment> = []
-  for (const comment of comments) {
+  for (const raw of comments) {
+    // The model sometimes copies the "--- <path>" file header from toDiff into the path
+    const comment = { ...raw, path: raw.path.replace(/^---\s*/, "").trim() }
     if (lines.get(comment.path)?.has(comment.line)) inline.push(comment)
     else unplaced.push(comment)
   }

@@ -4,11 +4,12 @@ import { formatReviewBody, placeComments, reviewableFiles } from "../src/reviewa
 const file = (filename: string, patch?: string) => ({ filename, status: "modified", patch })
 
 describe("reviewableFiles", () => {
-  it("skips lockfiles at any depth and files without a patch", () => {
+  it("skips lockfiles and fixtures at any depth and files without a patch", () => {
     const files = [
       file("src/a.ts", "@@ -1 +1 @@\n+x"),
       file("pnpm-lock.yaml", "@@ -1 +1 @@\n+x"),
       file("apps/web/package-lock.json", "@@ -1 +1 @@\n+x"),
+      file("test/fixtures/pull_request.opened.json", "@@ -1 +1 @@\n+x"),
       file("logo.png"),
     ]
     expect(reviewableFiles(files).map((f) => f.filename)).toEqual(["src/a.ts"])

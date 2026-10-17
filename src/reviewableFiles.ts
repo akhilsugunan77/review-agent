@@ -2,15 +2,13 @@ import type { PullRequestFile } from "./Github.ts"
 import type { Review, ReviewComment } from "./Reviewer.ts"
 import { commentableLines, numberPatch } from "./diffLines.ts"
 
-const IGNORED = ["pnpm-lock.yaml", "package-lock.json", "yarn.lock", "bun.lock"]
+// Path segments that mark a file as noise: lockfiles and recorded test data
+const IGNORED = ["pnpm-lock.yaml", "package-lock.json", "yarn.lock", "bun.lock", "fixtures"]
 
-export const reviewableFiles = (files: ReadonlyArray<PullRequestFile>) => {
-  return files.filter((file) => {
-    if (!file.patch) return false
-    const splitPaths = file.filename.split("/")
-    return !splitPaths.some((sp) => IGNORED.includes(sp))
-  })
-}
+export const reviewableFiles = (files: ReadonlyArray<PullRequestFile>) =>
+  files.filter(
+    (file) => file.patch && !file.filename.split("/").some((segment) => IGNORED.includes(segment)),
+  )
 
 export const toDiff = (files: ReadonlyArray<PullRequestFile>) =>
   files

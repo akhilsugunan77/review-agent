@@ -1,9 +1,10 @@
 import { describe, it, expect } from "@effect/vitest"
-import { Effect, Layer, Redacted } from "effect"
+import { Effect, Layer, Option, Redacted } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { createHmac } from "node:crypto"
 import { makeHandler, PullRequestEventSchema } from "../src/handler.ts"
 import { Reviewer } from "../src/Reviewer.ts"
+import type { ReviewContext } from "../src/projectContext.ts"
 import { Github, type ReviewInput } from "../src/Github.ts"
 import pullRequestOpenedJson from "./fixtures/pull_request.opened.json" with { type: "json" }
 import pullRequestSynchronizeJson from "./fixtures/pull_request.synchronize.json" with { type: "json" }
@@ -13,13 +14,28 @@ const secret = "test-secret"
 
 const exampleDiff = readFileSync(new URL("./fixtures/example.diff", import.meta.url), "utf-8")
 
-const githubSpy = (diff: string, posted: Array<ReviewInput>) =>
+const githubSpy = (
+  diff: string,
+  posted: Array<ReviewInput>,
+  readme: Option.Option<string> = Option.none(),
+  readmeRefs: Array<string> = [],
+) =>
   Layer.succeed(
     Github,
     Github.of({
       getPullRequestDiff: () =>
         Effect.succeed([{ filename: "hello.txt", patch: diff, status: "updated" }]),
       createReview: (_repo, _prNo, review) => Effect.sync(() => posted.push(review)),
+      getReadme: (_repo, ref) => Effect.sync(() => (readmeRefs.push(ref), readme)),
+    }),
+  )
+
+const reviewerSpy = (contexts: Array<ReviewContext>) =>
+  Layer.succeed(
+    Reviewer,
+    Reviewer.of({
+      review: (_diff, context) =>
+        Effect.sync(() => (contexts.push(context), { confidence: 8, summary: "ok", comments: [] })),
     }),
   )
 
@@ -49,7 +65,12 @@ const run = (secretToken: string, githubEvent?: string, action?: string) => {
     PullRequestEventSchema.make({
       action: action ?? "opened",
       number: 1,
-      pull_request: { title: "Example", head: { sha: "abc123" } },
+      pull_request: {
+        title: "Example",
+        body: null,
+        head: { sha: "abc123" },
+        base: { sha: "def456" },
+      },
       repository: {
         full_name: "Effect-TS/effect",
       },
@@ -128,6 +149,27 @@ describe("Handler", () => {
       Effect.provide([
         githubSpy("@@ -1,2 +1,3 @@\n one\n+two\n three", inlinePosted),
         Reviewer.mockWith([onDiffLine, offDiffLine]),
+      ]),
+    ),
+  )
+  const readmeRefs: Array<string> = []
+  const contexts: Array<ReviewContext> = []
+  it.effect("Reviews with the README from the base commit and the PR title and description", () =>
+    Effect.gen(function* () {
+      const response = yield* runPullRequestEvent(pullRequestOpenedJson)
+      expect(response.status).toBe(200)
+      expect(readmeRefs).toEqual([pullRequestOpenedJson.pull_request.base.sha])
+      expect(contexts).toEqual([
+        {
+          title: pullRequestOpenedJson.pull_request.title,
+          description: Option.none(),
+          readme: Option.some("# Project\n\nBooking app."),
+        },
+      ])
+    }).pipe(
+      Effect.provide([
+        githubSpy(exampleDiff, [], Option.some("# Project\n\n\n\nBooking app."), readmeRefs),
+        reviewerSpy(contexts),
       ]),
     ),
   )

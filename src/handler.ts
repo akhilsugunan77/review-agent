@@ -3,6 +3,7 @@ import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { Github } from "./Github.ts"
 import { Reviewer } from "./Reviewer.ts"
 import { verifySignature } from "./verifySignature.ts"
+import { makeReviewContext } from "./projectContext.ts"
 import { formatReviewBody, placeComments, reviewableFiles, toDiff } from "./reviewableFiles.ts"
 
 export const PullRequestEventSchema = Schema.Struct({
@@ -10,7 +11,9 @@ export const PullRequestEventSchema = Schema.Struct({
   number: Schema.Finite,
   pull_request: Schema.Struct({
     title: Schema.String,
+    body: Schema.NullOr(Schema.String),
     head: Schema.Struct({ sha: Schema.String }),
+    base: Schema.Struct({ sha: Schema.String }),
   }),
   repository: Schema.Struct({ full_name: Schema.String }),
 })
@@ -38,8 +41,18 @@ export const makeHandler = (webhookSecret: Redacted.Redacted) =>
       const files = reviewableFiles(
         yield* github.getPullRequestDiff(event.repository.full_name, event.number),
       )
+      // Read from the base commit so a PR can't rewrite the context it's reviewed with
+      const readme = yield* github.getReadme(
+        event.repository.full_name,
+        event.pull_request.base.sha,
+      )
+      const context = makeReviewContext({
+        title: event.pull_request.title,
+        description: event.pull_request.body,
+        readme,
+      })
       const reviewer = yield* Reviewer
-      const review = yield* reviewer.review(toDiff(files))
+      const review = yield* reviewer.review(toDiff(files), context)
       const { inline, unplaced } = placeComments(files, review.comments)
       const reviewBody = formatReviewBody(review, unplaced)
       yield* github.createReview(event.repository.full_name, event.number, {

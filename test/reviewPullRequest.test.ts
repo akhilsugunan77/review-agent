@@ -48,7 +48,12 @@ const reviewerSpy = (contexts: Array<ReviewContext>) =>
     Reviewer,
     Reviewer.of({
       review: (_diff, context) =>
-        Effect.sync(() => (contexts.push(context), { confidence: 8, summary: "ok", comments: [] })),
+        Effect.sync(
+          () => (
+            contexts.push(context),
+            { analysis: "", confidence: 8, summary: "ok", comments: [] }
+          ),
+        ),
     }),
   )
 

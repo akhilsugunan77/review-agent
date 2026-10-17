@@ -31,7 +31,7 @@ describe("placeComments", () => {
 })
 
 describe("formatReviewBody", () => {
-  const review = { confidence: 6, summary: "One risky change.", comments: [] }
+  const review = { analysis: "", confidence: 6, summary: "One risky change.", comments: [] }
 
   it("is just the confidence line when everything went inline", () => {
     expect(formatReviewBody(review, [])).toBe("**Merge confidence:** 6/10 — One risky change.")

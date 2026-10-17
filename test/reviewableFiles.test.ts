@@ -28,6 +28,15 @@ describe("placeComments", () => {
       unplaced: [outsideHunk, unknownFile],
     })
   })
+
+  it("strips the diff's '--- ' file header when the model copies it into the path", () => {
+    const copiedHeader = { path: "--- src/a.ts", line: 2, body: "inline" }
+    const outsideHunk = { path: "--- src/a.ts", line: 50, body: "far away" }
+    expect(placeComments(files, [copiedHeader, outsideHunk])).toEqual({
+      inline: [{ ...copiedHeader, path: "src/a.ts" }],
+      unplaced: [{ ...outsideHunk, path: "src/a.ts" }],
+    })
+  })
 })
 
 describe("formatReviewBody", () => {

@@ -26,8 +26,8 @@ const WorkersAiResponse = Schema.Struct({
   result: Schema.Struct({ response: Schema.Union([Review, Schema.fromJsonString(Review)]) }),
 })
 
-// Only these Workers AI models support JSON mode (response_format)
-const MODEL = "@cf/meta/llama-3.1-8b-instruct"
+// Must be a Workers AI model that supports JSON mode (response_format)
+const MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
 
 const systemPrompts = `
 You're a code reviewer. You get a diff where each file starts with "--- <path>" and every line that exists in the new file is prefixed with its line number.
@@ -62,6 +62,7 @@ export class Reviewer extends Context.Service<
 
       const review = Effect.fn("review")(
         function* (diff: string) {
+          yield* Effect.logInfo("Reviewer request", { model: MODEL, diffChars: diff.length })
           const response = yield* client.post(`/${MODEL}`, {
             body: HttpBody.jsonUnsafe({
               messages: [
@@ -76,6 +77,7 @@ export class Reviewer extends Context.Service<
             }),
           })
           const json = yield* response.json
+          yield* Effect.logInfo("Reviewer response", json)
           const decoded = yield* Schema.decodeUnknownEffect(WorkersAiResponse)(json)
           return decoded.result.response
         },

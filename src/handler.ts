@@ -3,6 +3,7 @@ import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { Github } from "./Github.ts"
 import { Reviewer } from "./Reviewer.ts"
 import { verifySignature } from "./verifySignature.ts"
+import { toDiff } from "./reviewableFiles.ts"
 
 export const PullRequestEventSchema = Schema.Struct({
   action: Schema.String,
@@ -31,10 +32,11 @@ export const makeHandler = (webhookSecret: Redacted.Redacted) =>
         return HttpServerResponse.text(`ignored action: ${event.action}`, { status: 200 })
       }
       const github = yield* Github
-      const diff = yield* github.getPullRequestDiff(event.repository.full_name, event.number)
+      const files = yield* github.getPullRequestDiff(event.repository.full_name, event.number)
       const reviewer = yield* Reviewer
-      const review = yield* reviewer.review(diff)
-      return HttpServerResponse.text(review)
+      const review = yield* reviewer.review(toDiff(files))
+      yield* github.postComment(event.repository.full_name, event.number, review)
+      return HttpServerResponse.text(review, { status: 200 })
     }
     return HttpServerResponse.text("Not found", { status: 404 })
   }).pipe(

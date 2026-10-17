@@ -4,7 +4,7 @@ import { Github } from "./Github.ts"
 import { Reviewer } from "./Reviewer.ts"
 import { makeHandler } from "./handler.ts"
 
-const Services = Layer.mergeAll(Github.layer, Reviewer.mock)
+const Services = Layer.mergeAll(Github.layer, Reviewer.layer)
 
 export default Cloudflare.Worker(
   "Worker",
@@ -20,5 +20,5 @@ export default Cloudflare.Worker(
       ),
     }
     // oxlint-disable-next-line effecttsgo/strict-effect-provide This is the entrypoint for worker
-  }).pipe(Effect.provide(Services)),
+  }).pipe(Effect.provide([Services])),
 )

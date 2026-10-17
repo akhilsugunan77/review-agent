@@ -3,12 +3,15 @@ import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { Github } from "./Github.ts"
 import { Reviewer } from "./Reviewer.ts"
 import { verifySignature } from "./verifySignature.ts"
-import { toDiff } from "./reviewableFiles.ts"
+import { formatReviewBody, placeComments, reviewableFiles, toDiff } from "./reviewableFiles.ts"
 
 export const PullRequestEventSchema = Schema.Struct({
   action: Schema.String,
   number: Schema.Finite,
-  pull_request: Schema.Struct({ title: Schema.String }),
+  pull_request: Schema.Struct({
+    title: Schema.String,
+    head: Schema.Struct({ sha: Schema.String }),
+  }),
   repository: Schema.Struct({ full_name: Schema.String }),
 })
 
@@ -32,11 +35,19 @@ export const makeHandler = (webhookSecret: Redacted.Redacted) =>
         return HttpServerResponse.text(`ignored action: ${event.action}`, { status: 200 })
       }
       const github = yield* Github
-      const files = yield* github.getPullRequestDiff(event.repository.full_name, event.number)
+      const files = reviewableFiles(
+        yield* github.getPullRequestDiff(event.repository.full_name, event.number),
+      )
       const reviewer = yield* Reviewer
       const review = yield* reviewer.review(toDiff(files))
-      yield* github.postComment(event.repository.full_name, event.number, review)
-      return HttpServerResponse.text(review, { status: 200 })
+      const { inline, unplaced } = placeComments(files, review.comments)
+      const reviewBody = formatReviewBody(review, unplaced)
+      yield* github.createReview(event.repository.full_name, event.number, {
+        commitId: event.pull_request.head.sha,
+        body: reviewBody,
+        comments: inline,
+      })
+      return HttpServerResponse.text(reviewBody, { status: 200 })
     }
     return HttpServerResponse.text("Not found", { status: 404 })
   }).pipe(

@@ -1,12 +1,5 @@
 import { Config, Context, Effect, Layer, Schema } from "effect"
-import {
-  FetchHttpClient,
-  HttpBody,
-  HttpClient,
-  HttpClientRequest,
-  HttpClientResponse,
-} from "effect/http"
-import { reviewableFiles } from "./reviewableFiles.ts"
+import { FetchHttpClient, HttpBody, HttpClient, HttpClientRequest } from "effect/http"
 
 export class GithubError extends Schema.TaggedError<GithubError>()("GithubError", {
   cause: Schema.Defect(),
@@ -20,6 +13,13 @@ export const PullRequestFile = Schema.Struct({
 
 export type PullRequestFile = typeof PullRequestFile.Type
 
+export interface ReviewInput {
+  /** The PR head sha the comment line numbers refer to */
+  readonly commitId: string
+  readonly body: string
+  readonly comments: ReadonlyArray<{ path: string; line: number; body: string }>
+}
+
 export class Github extends Context.Service<
   Github,
   {
@@ -27,7 +27,7 @@ export class Github extends Context.Service<
       repo: string,
       prNo: number,
     ): Effect.Effect<ReadonlyArray<PullRequestFile>, GithubError>
-    postComment(repo: string, prNo: number, body: string): Effect.Effect<void, GithubError>
+    createReview(repo: string, prNo: number, review: ReviewInput): Effect.Effect<void, GithubError>
   }
 >()("review-agent/Github") {
   static readonly layer = Layer.effect(
@@ -44,28 +44,30 @@ export class Github extends Context.Service<
       const getPullRequestDiff = Effect.fn("getPullRequestDiff")(
         function* (repo: string, prNo: number) {
           const response = yield* client.get(`/repos/${repo}/pulls/${prNo}/files`, {
-            headers: {
-              accept: "application/vnd.github.diff",
-            },
+            urlParams: { per_page: 100 },
           })
           const body = yield* response.json
-          const rawFiles = yield* Schema.decodeUnknownEffect(Schema.Array(PullRequestFile))(body)
-          const files = reviewableFiles(rawFiles)
-          return files
+          return yield* Schema.decodeUnknownEffect(Schema.Array(PullRequestFile))(body)
         },
         Effect.mapError((cause) => new GithubError({ cause })),
       )
 
-      const postComment = Effect.fn("postComment")(
-        function* (repo: string, prNo: number, body: string) {
-          yield* client.post(`/repos/${repo}/issues/${prNo}/comments`, {
-            body: HttpBody.jsonUnsafe({ body }),
+      // A review carries the overall comment plus every inline comment in one request
+      const createReview = Effect.fn("createReview")(
+        function* (repo: string, prNo: number, review: ReviewInput) {
+          yield* client.post(`/repos/${repo}/pulls/${prNo}/reviews`, {
+            body: HttpBody.jsonUnsafe({
+              commit_id: review.commitId,
+              event: "COMMENT",
+              body: review.body,
+              comments: review.comments.map((c) => ({ ...c, side: "RIGHT" })),
+            }),
           })
         },
         Effect.mapError((cause) => new GithubError({ cause })),
       )
 
-      return Github.of({ getPullRequestDiff, postComment })
+      return Github.of({ getPullRequestDiff, createReview })
     }),
   ).pipe(Layer.provide(FetchHttpClient.layer))
 
@@ -75,7 +77,7 @@ export class Github extends Context.Service<
       Github.of({
         getPullRequestDiff: () =>
           Effect.succeed([{ filename: "hello.txt", patch: diff, status: "updated" }]),
-        postComment: () => Effect.void,
+        createReview: () => Effect.void,
       }),
     )
 
@@ -83,7 +85,7 @@ export class Github extends Context.Service<
     Github,
     Github.of({
       getPullRequestDiff: () => new GithubError({ cause: "failed test" }),
-      postComment: () => new GithubError({ cause: "Post comment failed" }),
+      createReview: () => new GithubError({ cause: "Create review failed" }),
     }),
   )
 }

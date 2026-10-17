@@ -5,22 +5,43 @@ export class ReviewerError extends Schema.TaggedError<ReviewerError>()("Reviewer
   cause: Schema.Defect(),
 }) {}
 
-const WorkersAiResponse = Schema.Struct({
-  result: Schema.Struct({ response: Schema.String }),
+export const ReviewComment = Schema.Struct({
+  path: Schema.String,
+  line: Schema.Int,
+  body: Schema.String,
 })
 
+export type ReviewComment = typeof ReviewComment.Type
+
+export const Review = Schema.Struct({
+  confidence: Schema.Int,
+  summary: Schema.String,
+  comments: Schema.Array(ReviewComment),
+})
+
+export type Review = typeof Review.Type
+
+// JSON mode may hand back the object itself or a JSON string, so accept both
+const WorkersAiResponse = Schema.Struct({
+  result: Schema.Struct({ response: Schema.Union([Review, Schema.fromJsonString(Review)]) }),
+})
+
+// Only these Workers AI models support JSON mode (response_format)
+const MODEL = "@cf/meta/llama-3.1-8b-instruct"
+
 const systemPrompts = `
-You're a code reviewer.
-Make every issue prove itself. Require, for each issue: the file, the line, and a concrete failure scenario ('when X happens, Y goes wrong'). 'Add logging' can't name a failure scenario, so it gets filtered out. Explicitly allow 'no issues', e.g. 'If you find no real bugs, say so. An empty list is a good result. Never invent issues to fill the list.
-Template:
-  **Merge confidence:** <1-10> — <one sentence why> 
-  **Issues** (max 5, most severe first; omit this section if none) 
-  1. \`<file>:<line>\` — <the bug> — **Fails when:** <concrete scenario>`
+You're a code reviewer. You get a diff where each file starts with "--- <path>" and every line that exists in the new file is prefixed with its line number.
+Make every issue prove itself. Each comment needs a concrete failure scenario ("when X happens, Y goes wrong"). "Add logging" can't name a failure scenario, so leave it out.
+If you find no real bugs, return an empty comments list. That's a good result. Never invent issues to fill the list.
+Respond with JSON:
+- confidence: 1-10, how safely this can merge without a production issue
+- summary: one sentence explaining the confidence
+- comments: at most 5, most severe first. Each has path (exactly as written after "---"), line (a line number shown in the diff, on a "+" line when possible) and body ("<the bug>. **Fails when:** <concrete scenario>")`
 
 export class Reviewer extends Context.Service<
   Reviewer,
   {
-    review: (diff: string) => Effect.Effect<string, ReviewerError>
+    review: (diff: string) => Effect.Effect<Review, ReviewerError>
   }
 >()("review-agent/Reviewer") {
   static readonly layer = Layer.effect(
@@ -37,10 +58,11 @@ export class Reviewer extends Context.Service<
         HttpClient.mapRequest(HttpClientRequest.bearerToken(token)),
         HttpClient.filterStatusOk,
       )
+      const jsonSchema = Schema.toJsonSchemaDocument(Review).schema
 
       const review = Effect.fn("review")(
         function* (diff: string) {
-          const response = yield* client.post("/@cf/meta/llama-3.2-3b-instruct", {
+          const response = yield* client.post(`/${MODEL}`, {
             body: HttpBody.jsonUnsafe({
               messages: [
                 {
@@ -49,7 +71,8 @@ export class Reviewer extends Context.Service<
                 },
                 { role: "user", content: diff },
               ],
-              max_tokens: 512,
+              response_format: { type: "json_schema", json_schema: jsonSchema },
+              max_tokens: 1024,
             }),
           })
           const json = yield* response.json
@@ -65,11 +88,18 @@ export class Reviewer extends Context.Service<
     }),
   ).pipe(Layer.provide(FetchHttpClient.layer))
 
-  static readonly mock = Layer.succeed(
-    Reviewer,
-    Reviewer.of({
-      review: (diff) =>
-        Effect.succeed(`Fake review: this diff has ${diff.split("\n").length} lines look good`),
-    }),
-  )
+  static readonly mockWith = (comments: ReadonlyArray<ReviewComment>) =>
+    Layer.succeed(
+      Reviewer,
+      Reviewer.of({
+        review: (diff) =>
+          Effect.succeed({
+            confidence: 8,
+            summary: `Fake review: this diff has ${diff.split("\n").length} lines look good`,
+            comments,
+          }),
+      }),
+    )
+
+  static readonly mock = Reviewer.mockWith([])
 }

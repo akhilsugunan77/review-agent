@@ -46,8 +46,9 @@ The project is in its early stages and is being built step by step. What exists 
 | Fetches the PR's changed files and skips lockfiles                                          | ✅ (in progress) |
 | LLM review via Cloudflare Workers AI (small free model)                                     | ✅ basic         |
 | Posts the review as one PR comment, including a Merge confidence score                      | ✅               |
-| Inline comments on specific diff lines                                                      | ⏳               |
-| Project/business context file read from the target repo                                     | ⏳               |
+| Inline comments on specific diff lines                                                      | ✅               |
+| Project context: target repo's README (from the base commit) plus PR title and description  | ✅ v1            |
+| Richer context (business goals, docs outside the repo)                                      | ⏳               |
 | Fast webhook response plus background processing (GitHub times out after 10s)               | ⏳               |
 | Tool-using agent that explores the codebase (read files, search)                            | ⏳               |
 | GitHub App identity (bot account instead of a personal token)                               | ⏳               |

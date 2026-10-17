@@ -19,6 +19,13 @@ export const PullRequestFile = Schema.Struct({
 
 export type PullRequestFile = typeof PullRequestFile.Type
 
+export const PullRequest = Schema.Struct({
+  state: Schema.String,
+  head: Schema.Struct({ sha: Schema.String }),
+})
+
+export type PullRequest = typeof PullRequest.Type
+
 export interface ReviewInput {
   /** The PR head sha the comment line numbers refer to */
   readonly commitId: string
@@ -33,6 +40,7 @@ export class Github extends Context.Service<
       repo: string,
       prNo: number,
     ): Effect.Effect<ReadonlyArray<PullRequestFile>, GithubError>
+    getPullRequest(repo: string, prNo: number): Effect.Effect<PullRequest, GithubError>
     createReview(repo: string, prNo: number, review: ReviewInput): Effect.Effect<void, GithubError>
     /** The repo's README at `ref`, or none when the repo has no README */
     getReadme(repo: string, ref: string): Effect.Effect<Option.Option<string>, GithubError>
@@ -56,6 +64,15 @@ export class Github extends Context.Service<
           })
           const body = yield* response.json
           return yield* Schema.decodeUnknownEffect(Schema.Array(PullRequestFile))(body)
+        },
+        Effect.mapError((cause) => new GithubError({ cause })),
+      )
+
+      const getPullRequest = Effect.fn("getPullRequest")(
+        function* (repo: string, prNo: number) {
+          const response = yield* client.get(`/repos/${repo}/pulls/${prNo}`)
+          const body = yield* response.json
+          return yield* Schema.decodeUnknownEffect(PullRequest)(body)
         },
         Effect.mapError((cause) => new GithubError({ cause })),
       )
@@ -89,7 +106,7 @@ export class Github extends Context.Service<
         Effect.mapError((cause) => new GithubError({ cause })),
       )
 
-      return Github.of({ getPullRequestDiff, createReview, getReadme })
+      return Github.of({ getPullRequestDiff, getPullRequest, createReview, getReadme })
     }),
   ).pipe(Layer.provide(FetchHttpClient.layer))
 
@@ -99,6 +116,7 @@ export class Github extends Context.Service<
       Github.of({
         getPullRequestDiff: () =>
           Effect.succeed([{ filename: "hello.txt", patch: diff, status: "updated" }]),
+        getPullRequest: () => Effect.succeed({ state: "open", head: { sha: "abc123" } }),
         createReview: () => Effect.void,
         getReadme: () => Effect.succeed(Option.none()),
       }),
@@ -108,6 +126,7 @@ export class Github extends Context.Service<
     Github,
     Github.of({
       getPullRequestDiff: () => new GithubError({ cause: "failed test" }),
+      getPullRequest: () => new GithubError({ cause: "Get pull request failed" }),
       createReview: () => new GithubError({ cause: "Create review failed" }),
       getReadme: () => new GithubError({ cause: "Get readme failed" }),
     }),

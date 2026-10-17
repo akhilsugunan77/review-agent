@@ -14,7 +14,9 @@ export const ReviewComment = Schema.Struct({
 
 export type ReviewComment = typeof ReviewComment.Type
 
+// analysis comes first: the model generates fields in order, so it reasons before it scores
 export const Review = Schema.Struct({
+  analysis: Schema.String,
   confidence: Schema.Int,
   summary: Schema.String,
   comments: Schema.Array(ReviewComment),
@@ -36,8 +38,9 @@ Use the README to understand what the project does and which flows matter, and t
 Make every issue prove itself. Each comment needs a concrete failure scenario ("when X happens, Y goes wrong"). "Add logging" can't name a failure scenario, so leave it out.
 If you find no real bugs, return an empty comments list. That's a good result. Never invent issues to fill the list.
 Respond with JSON:
-- confidence: 1-10, how safely this can merge without a production issue
-- summary: one sentence explaining the confidence
+- analysis: think before you judge. Go through the changed files one by one: what each change does, what could break, and whether the diff shows enough to be sure. Name exact paths and line numbers. This is your working notes; the author doesn't see it.
+- confidence: 1-10, how safely this can merge without a production issue, based on your analysis
+- summary: one sentence explaining the confidence. Only mention issues that are in your comments; if comments is empty, don't hint at issues
 - comments: at most 5, most severe first. Each has path (exactly as written after "---"), line (a line number shown in the diff, on a "+" line when possible) and body ("<the bug>. **Fails when:** <concrete scenario>")`
 
 /** The user message: each piece of context in its own delimited section, the diff last */
@@ -95,7 +98,8 @@ export class Reviewer extends Context.Service<
                 { role: "user", content },
               ],
               response_format: { type: "json_schema", json_schema: jsonSchema },
-              max_tokens: 1024,
+              // Room for the analysis plus the review, so the JSON isn't cut off
+              max_tokens: 2048,
             }),
           })
           const json = yield* response.json
@@ -118,6 +122,7 @@ export class Reviewer extends Context.Service<
       Reviewer.of({
         review: (diff) =>
           Effect.succeed({
+            analysis: "Fake analysis",
             confidence: 8,
             summary: `Fake review: this diff has ${diff.split("\n").length} lines look good`,
             comments,

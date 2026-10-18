@@ -51,3 +51,5 @@ export const formatReviewBody = (review: Review, unplaced: ReadonlyArray<ReviewC
 
 /** Test change for review-agent's posting checks: a file with no patch can't take inline comments */
 export const hasPatch = (file: { patch?: string | undefined }): boolean => file.patch !== undefined && file.patch !== ""
+
+// watch check: push 1

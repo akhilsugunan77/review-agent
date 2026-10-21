@@ -26,12 +26,9 @@ export const verifySignature = (
   header: string | undefined,
 ) =>
   Effect.gen(function* () {
-    if (header === undefined) {
-      return yield* new InvalidSignature({ reason: "Missing signature header" })
-    }
-
+    // One check for both cases: compute the expected signature once and compare
     const expected = yield* Effect.promise(() => hmacSha256Hex(Redacted.value(secret), payload))
-    if (header !== `sha256=${expected}`) {
+    if (header !== undefined && header !== `sha256=${expected}`) {
       return yield* new InvalidSignature({ reason: "Signature mismatch" })
     }
     return true

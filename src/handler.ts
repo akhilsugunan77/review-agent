@@ -1,4 +1,4 @@
-import { Effect, Redacted, Schema } from "effect"
+import { Effect, Redacted, Schedule, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { ReviewQueue } from "./ReviewQueue.ts"
 import { verifySignature } from "./verifySignature.ts"
@@ -43,7 +43,10 @@ export const makeHandler = (webhookSecret: Redacted.Redacted) =>
         baseSha: event.pull_request.base.sha,
         title: event.pull_request.title,
         body: event.pull_request.body,
-      })
+      }).pipe(
+        // The queue's send occasionally times out; try a couple more times before giving up with a 503
+        Effect.retry({ schedule: Schedule.exponential("200 millis"), times: 2 }),
+      )
       return HttpServerResponse.text("Review queued", { status: 202 })
     }
     return HttpServerResponse.text("Not found", { status: 404 })

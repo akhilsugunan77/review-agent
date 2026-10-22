@@ -39,13 +39,13 @@ export const reviewPullRequest = Effect.fn("reviewPullRequest")(function* (job: 
   })
 })
 
-// Retry what might pass next time (LLM hiccups, GitHub 5xx, rate limits, network);
-// a 4xx or a malformed response will fail the same way again
+// Retry what might pass next time (LLM hiccups, GitHub 5xx, rate limits, network).
+// GitHub also returns 404s for a few seconds after a push while the new head propagates, so client errors get retried too
 const isRetryable = (error: GithubError | ReviewerError) => {
   if (error instanceof ReviewerError) return true
   if (!HttpClientError.isHttpClientError(error.cause)) return false
   const status = error.cause.response?.status
-  return status === undefined || status === 429 || status >= 500
+  return status === undefined || status >= 400
 }
 
 const retryOrDrop = (error: GithubError | ReviewerError) =>

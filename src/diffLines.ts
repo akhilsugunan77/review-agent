@@ -19,11 +19,13 @@ const parsePatch = (patch: string): ReadonlyArray<PatchLine> => {
       return { kind: "hunk", text }
     }
     if (next === undefined) return { kind: "meta", text }
-    if (text.startsWith("+")) return { kind: "added", line: next++, text }
-    if (text.startsWith("-")) return { kind: "removed", text }
     // "\ No newline at end of file" doesn't take up a line
     if (text.startsWith("\\")) return { kind: "meta", text }
-    return { kind: "context", line: next++, text }
+    // Every hunk line after the header takes up one line
+    const line = next++
+    if (text.startsWith("+")) return { kind: "added", line, text }
+    if (text.startsWith("-")) return { kind: "removed", text }
+    return { kind: "context", line, text }
   })
 }
 

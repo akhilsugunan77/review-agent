@@ -48,3 +48,14 @@ export const formatReviewBody = (review: Review, unplaced: ReadonlyArray<ReviewC
   const notes = unplaced.map((c) => `- \`${c.path}:${c.line}\` — ${c.body}`).join("\n")
   return `${header}\n\n**Other notes**\n${notes}`
 }
+
+/** Test change for review-agent's posting checks: a file with no patch can't take inline comments */
+export const hasPatch = (file: { patch?: string | undefined }): boolean => file.patch !== undefined && file.patch !== ""
+
+// watch check: push 1
+// watch check: push 2
+// watch check: push 3
+// watch check: push 4
+// T16 check: one more commit
+// T16 check: two more commits (1)
+// T16 check: two more commits (2)

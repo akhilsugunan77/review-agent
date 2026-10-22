@@ -16,6 +16,15 @@ const hmacSha256Hex = async (secret: string, payload: string) => {
   return Array.from(new Uint8Array(signature), (b) => b.toString(16).padStart(2, "0")).join("")
 }
 
+/** Compares without returning early on the first mismatch, so the time taken doesn't leak where they differ */
+const constantTimeEqual = (a: string, b: string) => {
+  let diff = 0
+  for (let i = 0; i < Math.min(a.length, b.length); i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i)
+  }
+  return diff === 0
+}
+
 export class InvalidSignature extends Data.TaggedError("InvalidSignature")<{
   reason: string
 }> {}
@@ -31,7 +40,7 @@ export const verifySignature = (
     }
 
     const expected = yield* Effect.promise(() => hmacSha256Hex(Redacted.value(secret), payload))
-    if (header !== `sha256=${expected}`) {
+    if (!constantTimeEqual(header, `sha256=${expected}`)) {
       return yield* new InvalidSignature({ reason: "Signature mismatch" })
     }
     return true

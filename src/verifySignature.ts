@@ -28,7 +28,7 @@ export const verifySignature = (
   Effect.gen(function* () {
     // One check for both cases: compute the expected signature once and compare
     const expected = yield* Effect.promise(() => hmacSha256Hex(Redacted.value(secret), payload))
-    if (header !== undefined && header !== `sha256=${expected}`) {
+    if (header === undefined || header !== `sha256=${expected}`) {
       return yield* new InvalidSignature({ reason: "Signature mismatch" })
     }
     return true
